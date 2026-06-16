@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal do Colaborador · Protótipo</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/feather-icons"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  body{background:#eef2f7}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:18px}
+  .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:9999px;font-size:11px;font-weight:600}
+  .app{max-width:430px;margin:0 auto;background:#f8fafc;min-height:100vh;box-shadow:0 10px 40px rgba(15,23,42,.12);position:relative}
+  .fade{animation:f .25s ease}@keyframes f{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+  .pop{animation:p .4s cubic-bezier(.2,.8,.3,1.2)}@keyframes p{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
+  .navbtn.active{color:#2563eb}
+  .navbtn.active .nb{background:#dbeafe}
+  .ring{transform:rotate(-90deg)}
+  ::-webkit-scrollbar{width:0}
+</style>
+</head>
+<body class="text-slate-800">
+<div class="app pb-24" id="app"></div>
+<script>
+/* ===================== MOCK DATA ===================== */
+const C={
+  nome:'Adriano Ferreira', primeiro:'Adriano', iniciais:'AF',
+  cargo:'Garçom 1', setor:'Salão', restaurante:'Mercearia Amauri',
+  registro:'2025-02-01',
+  nivel:4, xp:720, xpProx:1000, streak:12,
+  vendasMes:[ ['Set',31200],['Out',34800],['Nov',38500],['Dez',47200],['Jan',41900],['Fev',45600],['Mar',52800] ],
+  rankingCargo:[
+    {nome:'Romulo R.', v:58200}, {nome:'Você', v:52800, eu:true}, {nome:'Ismael A.', v:50100},
+    {nome:'Jorciel L.', v:47600}, {nome:'José Luciano', v:45200}, {nome:'Renato O.', v:43900},
+    {nome:'Juliano S.', v:41200}, {nome:'João Pereira', v:39800}, {nome:'Francinei M.', v:37400}
+  ],
+  escala:[
+    {d:'Seg', folga:true}, {d:'Ter', ent:'17:00', sai:'01:00'}, {d:'Qua', ent:'17:00', sai:'01:00'},
+    {d:'Qui', ent:'17:00', sai:'01:00'}, {d:'Sex', ent:'12:00', sai:'16:00\n19:00-00:00'},
+    {d:'Sáb', ent:'12:00', sai:'00:00'}, {d:'Dom', ent:'12:00', sai:'18:00'}
+  ],
+  conquistas:[
+    {ic:'award', t:'6 meses de casa', sub:'Fev/2025', cor:'amber', ok:true},
+    {ic:'trending-up', t:'Top 3 em vendas', sub:'Mar/2026', cor:'emerald', ok:true},
+    {ic:'clock', t:'Pontualidade', sub:'90 dias sem atraso', cor:'blue', ok:true},
+    {ic:'book-open', t:'Certificação Vinhos I', sub:'Sommelier nível 1', cor:'purple', ok:true},
+    {ic:'star', t:'1 ano de casa', sub:'faltam 11 meses', cor:'slate', ok:false},
+    {ic:'zap', t:'Top 1 do mês', sub:'seja o nº 1 em vendas', cor:'slate', ok:false},
+    {ic:'users', t:'Padrinho', sub:'treine um novato', cor:'slate', ok:false},
+    {ic:'target', t:'Meta trimestral', sub:'R$ 150k no trimestre', cor:'slate', ok:false}
+  ],
+  carreira:[
+    {c:'Cumim', done:true}, {c:'Garçom 3', done:true}, {c:'Garçom 2', done:true},
+    {c:'Garçom 1', atual:true}, {c:'Garçom Sommelier', prox:true}, {c:'Maître', done:false}
+  ],
+  proxNivel:{ cargo:'Garçom Sommelier', reqs:[
+    {t:'Certificação Vinhos II', p:60}, {t:'Média de vendas ≥ R$ 50k (3 meses)', p:100}, {t:'12 meses no cargo atual', p:75}
+  ]},
+  avisos:[
+    {t:'Reunião de alinhamento — Sáb 14h', sub:'Salão · presença confirmada', tag:'Evento', cor:'blue', novo:true},
+    {t:'Novo treinamento de vinhos liberado', sub:'Conta +120 XP ao concluir', tag:'Treinamento', cor:'purple', novo:true},
+    {t:'Holerite de Fevereiro disponível', sub:'Confira no app de pagamento', tag:'Pagamento', cor:'emerald', novo:false}
+  ],
+  mensagens:[
+    {de:'rh', txt:'Oi Adriano! Sua certificação de Vinhos I foi registrada 🎉 +parabéns!', h:'09:12'},
+    {de:'eu', txt:'Show! Já posso me inscrever na Vinhos II?', h:'09:20'},
+    {de:'rh', txt:'Pode sim, abre dia 10. Te aviso por aqui quando liberar.', h:'09:21'}
+  ]
+};
+const money=v=>'R$ '+(Number(v||0)).toLocaleString('pt-BR');
+const moneyK=v=>'R$ '+(v/1000).toFixed(0)+'k';
+function tempoEmpresa(d){ const a=new Date(d+'T00:00:00'), h=new Date(); let m=(h.getFullYear()-a.getFullYear())*12+(h.getMonth()-a.getMonth()); if(h.getDate()<a.getDate())m--; const an=Math.floor(m/12), me=m%12; return (an?an+'a ':'')+me+'m'; }
+const corMap={amber:['bg-amber-100','text-amber-600'],emerald:['bg-emerald-100','text-emerald-600'],blue:['bg-blue-100','text-blue-600'],purple:['bg-purple-100','text-purple-600'],slate:['bg-slate-100','text-slate-400']};
+
+let tab='inicio', vendasChart=null;
+function rankPos(){ return C.rankingCargo.findIndex(x=>x.eu)+1; }
+
+/* ===================== HEADER (perfil + gamificação) ===================== */
+function header(){
+  const pct=Math.round(C.xp/C.xpProx*100);
+  return `<div class="bg-gradient-to-br from-blue-600 to-blue-700 text-white px-5 pt-7 pb-6 rounded-b-[28px] relative overflow-hidden">
+    <div class="absolute -right-8 -top-10 w-40 h-40 bg-white/10 rounded-full"></div>
+    <div class="absolute right-10 top-16 w-20 h-20 bg-white/10 rounded-full"></div>
+    <div class="flex items-center justify-between mb-4 relative">
+      <span class="text-xs font-semibold text-blue-100 flex items-center gap-1.5"><i data-feather="award" class="w-4 h-4"></i>${C.restaurante}</span>
+      <button class="relative" onclick="go('rh')"><i data-feather="bell" class="w-5 h-5 text-blue-100"></i><span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 rounded-full border-2 border-blue-600"></span></button>
+    </div>
+    <div class="flex items-center gap-4 relative">
+      <div class="relative">
+        <div class="w-[68px] h-[68px] rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center text-2xl font-bold">${C.iniciais}</div>
+        <div class="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-amber-400 text-amber-900 text-xs font-extrabold flex items-center justify-center border-[3px] border-blue-600 pop">${C.nivel}</div>
+      </div>
+      <div class="flex-1">
+        <h1 class="text-xl font-bold leading-tight">${C.nome}</h1>
+        <p class="text-sm text-blue-100">${C.cargo} · ${C.setor}</p>
+        <div class="flex items-center gap-2 mt-1.5 text-[11px] text-blue-100">
+          <span class="flex items-center gap-1"><i data-feather="zap" class="w-3 h-3 text-amber-300"></i>${C.streak} dias seguidos</span>
+          <span class="opacity-50">·</span>
+          <span>${tempoEmpresa(C.registro)} de casa</span>
+        </div>
+      </div>
+    </div>
+    <div class="mt-5 relative">
+      <div class="flex justify-between text-[11px] text-blue-100 mb-1"><span>Nível ${C.nivel} · ${C.xp} XP</span><span>${C.xpProx} XP → Nível ${C.nivel+1}</span></div>
+      <div class="h-2.5 bg-white/25 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r from-amber-300 to-amber-400 rounded-full" style="width:${pct}%"></div></div>
+    </div>
+  </div>`;
+}
+
+/* ===================== TAB: INÍCIO ===================== */
+function viewInicio(){
+  const pos=rankPos(); const venda=C.vendasMes.slice(-1)[0][1]; const ant=C.vendasMes.slice(-2)[0][1]; const cresc=Math.round((venda/ant-1)*100);
+  const stat=(ic,cor,lbl,v,sub)=>`<div class="card p-4 flex-1"><div class="flex items-center gap-2 mb-2"><div class="w-8 h-8 rounded-lg ${corMap[cor][0]} flex items-center justify-center"><i data-feather="${ic}" class="w-4 h-4 ${corMap[cor][1]}"></i></div></div><p class="text-lg font-bold text-slate-900 leading-none">${v}</p><p class="text-[11px] text-slate-500 mt-1">${lbl}</p>${sub?`<p class="text-[10px] text-slate-400">${sub}</p>`:''}</div>`;
+  const conqOk=C.conquistas.filter(c=>c.ok);
+  return `<div class="px-4 pt-4 fade space-y-4">
+    <div class="flex gap-3">
+      ${stat('trending-up','emerald','Vendas no mês', moneyK(venda), (cresc>=0?'+':'')+cresc+'% vs mês ant.')}
+      ${stat('bar-chart-2','blue','Ranking no cargo', pos+'º', 'de '+C.rankingCargo.length+' garçons')}
+    </div>
+    <div class="flex gap-3">
+      ${stat('clock','amber','Tempo de empresa', tempoEmpresa(C.registro), 'desde '+C.registro.split('-').reverse().join('/'))}
+      ${stat('award','purple','Conquistas', conqOk.length+'/'+C.conquistas.length, 'desbloqueadas')}
+    </div>
+    <div class="card p-5 bg-gradient-to-br from-slate-900 to-slate-800 text-white border-0">
+      <div class="flex items-center justify-between mb-1"><span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5"><i data-feather="flag" class="w-3.5 h-3.5"></i>PRÓXIMO NÍVEL DE CARREIRA</span><span class="badge bg-white/10 text-white">${C.proxNivel.cargo}</span></div>
+      <p class="text-sm text-slate-300 mb-3">Você está a alguns passos de virar <strong class="text-white">${C.proxNivel.cargo}</strong>.</p>
+      ${C.proxNivel.reqs.map(r=>`<div class="mb-2"><div class="flex justify-between text-[11px] mb-1"><span class="text-slate-200">${r.t}</span><span class="text-slate-400">${r.p}%</span></div><div class="h-1.5 bg-white/15 rounded-full overflow-hidden"><div class="h-full ${r.p>=100?'bg-emerald-400':'bg-amber-400'} rounded-full" style="width:${Math.min(100,r.p)}%"></div></div></div>`).join('')}
+      <button onclick="go('conquistas')" class="mt-2 w-full py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-medium">Ver plano de carreira</button>
+    </div>
+    <div class="card p-5">
+      <div class="flex items-center justify-between mb-3"><h3 class="font-bold flex items-center gap-2"><i data-feather="gift" class="w-4 h-4 text-amber-500"></i>Conquistas recentes</h3><button onclick="go('conquistas')" class="text-xs text-blue-600 font-medium">ver todas</button></div>
+      <div class="flex gap-3 overflow-x-auto pb-1">${conqOk.slice(0,4).map(c=>`<div class="flex flex-col items-center gap-1 min-w-[64px]"><div class="w-12 h-12 rounded-2xl ${corMap[c.cor][0]} flex items-center justify-center pop"><i data-feather="${c.ic}" class="w-5 h-5 ${corMap[c.cor][1]}"></i></div><span class="text-[9px] text-center text-slate-500 leading-tight">${c.t}</span></div>`).join('')}</div>
+    </div>
+  </div>`;
+}
+
+/* ===================== TAB: VENDAS ===================== */
+function viewVendas(){
+  const rk=C.rankingCargo.slice().sort((a,b)=>b.v-a.v); const pos=rankPos();
+  const podio=rk.slice(0,3);
+  return `<div class="px-4 pt-4 fade space-y-4">
+    <div class="card p-5">
+      <h3 class="font-bold mb-1 flex items-center gap-2"><i data-feather="trending-up" class="w-4 h-4 text-blue-600"></i>Evolução de vendas</h3>
+      <p class="text-[11px] text-slate-400 mb-3">Suas vendas mês a mês</p>
+      <div style="height:200px"><canvas id="vendasCanvas"></canvas></div>
+    </div>
+    <div class="card p-5 bg-gradient-to-br from-blue-600 to-blue-700 text-white border-0">
+      <p class="text-xs text-blue-100">Seu ranking entre os Garçom 1</p>
+      <div class="flex items-end gap-2 mt-1"><span class="text-4xl font-extrabold">${pos}º</span><span class="text-blue-100 mb-1">de ${rk.length}</span></div>
+      <p class="text-sm text-blue-100 mt-1">${pos>1?`Faltam <strong class="text-white">${money(rk[pos-2].v-rk[pos-1].v)}</strong> para ultrapassar o <strong class="text-white">${rk[pos-2].nome}</strong>`:'Você é o nº 1! 🏆'}</p>
+    </div>
+    <div class="card p-5">
+      <h3 class="font-bold mb-3 flex items-center gap-2"><i data-feather="bar-chart-2" class="w-4 h-4 text-blue-600"></i>Ranking do cargo — Mar/2026</h3>
+      <div class="flex items-end justify-center gap-3 mb-4">
+        ${[1,0,2].map(i=>{const p=podio[i];const h=[64,84,52][i];const m=['#cbd5e1','#fbbf24','#f59e0b'][i];const pos2=[2,1,3][i];return `<div class="flex flex-col items-center"><div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold ${p.eu?'bg-blue-600 text-white':'bg-slate-200 text-slate-600'} mb-1">${p.nome.split(' ')[0].slice(0,6)}</div><div class="w-16 rounded-t-lg flex items-start justify-center pt-1 text-white text-xs font-bold" style="height:${h}px;background:${m}">${pos2}º</div></div>`;}).join('')}
+      </div>
+      <div class="space-y-1">${rk.map((p,i)=>`<div class="flex items-center gap-3 p-2 rounded-xl ${p.eu?'bg-blue-50 ring-1 ring-blue-200':''}"><span class="w-6 text-center text-sm font-bold ${i<3?'text-amber-500':'text-slate-400'}">${i+1}</span><span class="flex-1 text-sm ${p.eu?'font-bold text-blue-700':'text-slate-700'}">${p.nome}${p.eu?' (você)':''}</span><span class="text-sm font-semibold text-slate-600">${moneyK(p.v)}</span></div>`).join('')}</div>
+    </div>
+  </div>`;
+}
+function initVendasChart(){
+  const el=document.getElementById('vendasCanvas'); if(!el||!window.Chart) return;
+  if(vendasChart){vendasChart.destroy();}
+  vendasChart=new Chart(el,{type:'line',data:{labels:C.vendasMes.map(m=>m[0]),datasets:[{data:C.vendasMes.map(m=>m[1]),borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.12)',fill:true,tension:.4,pointBackgroundColor:'#2563eb',pointRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'R$ '+Number(c.raw).toLocaleString('pt-BR')}}},scales:{y:{ticks:{callback:v=>'R$ '+(v/1000)+'k'},grid:{color:'#f1f5f9'}},x:{grid:{display:false}}}}});
+}
+
+/* ===================== TAB: ESCALA ===================== */
+function viewEscala(){
+  return `<div class="px-4 pt-4 fade space-y-3">
+    <div class="card p-5">
+      <h3 class="font-bold mb-1 flex items-center gap-2"><i data-feather="calendar" class="w-4 h-4 text-blue-600"></i>Minha escala da semana</h3>
+      <p class="text-[11px] text-slate-400 mb-3">Salão · semana atual</p>
+      <div class="space-y-2">${C.escala.map(e=>`<div class="flex items-center gap-3 p-3 rounded-xl border ${e.folga?'border-slate-100 bg-slate-50':'border-blue-100 bg-blue-50/40'}">
+        <div class="w-10 h-10 rounded-xl ${e.folga?'bg-slate-200 text-slate-500':'bg-blue-600 text-white'} flex items-center justify-center text-xs font-bold">${e.d}</div>
+        <div class="flex-1">${e.folga?'<span class="text-sm font-medium text-slate-400">Folga</span>':`<span class="text-sm font-semibold text-slate-800">${(e.ent+(e.sai?(' – '+e.sai):'')).replace('\\n',' · ')}</span><p class="text-[11px] text-slate-400">Turno confirmado</p>`}</div>
+        ${e.folga?'<i data-feather="coffee" class="w-4 h-4 text-slate-300"></i>':'<i data-feather="check-circle" class="w-4 h-4 text-emerald-500"></i>'}
+      </div>`).join('')}</div>
+      <button onclick="alert('Protótipo: solicitação de troca enviada ao líder.')" class="mt-3 w-full py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 flex items-center justify-center gap-2"><i data-feather="repeat" class="w-4 h-4"></i>Solicitar troca de turno</button>
+    </div>
+  </div>`;
+}
+
+/* ===================== TAB: CONQUISTAS / CARREIRA ===================== */
+function viewConquistas(){
+  return `<div class="px-4 pt-4 fade space-y-4">
+    <div class="card p-5">
+      <h3 class="font-bold mb-3 flex items-center gap-2"><i data-feather="map" class="w-4 h-4 text-blue-600"></i>Plano de carreira</h3>
+      <div class="space-y-0">${C.carreira.map((c,i)=>{const last=i===C.carreira.length-1;const st=c.atual?'atual':c.prox?'prox':c.done?'done':'lock';
+        const dot=st==='atual'?'bg-blue-600 ring-4 ring-blue-100':st==='prox'?'bg-amber-400':st==='done'?'bg-emerald-500':'bg-slate-200';
+        const ico=st==='done'?'check':st==='atual'?'user':st==='prox'?'arrow-up':'lock';
+        return `<div class="flex gap-3"><div class="flex flex-col items-center"><div class="w-7 h-7 rounded-full ${dot} flex items-center justify-center text-white"><i data-feather="${ico}" class="w-3.5 h-3.5"></i></div>${!last?`<div class="w-0.5 flex-1 ${c.done||c.atual?'bg-emerald-200':'bg-slate-200'} my-1"></div>`:''}</div>
+        <div class="pb-4 flex-1"><p class="text-sm font-semibold ${st==='atual'?'text-blue-700':st==='prox'?'text-amber-600':st==='lock'?'text-slate-400':'text-slate-700'}">${c.c}</p><p class="text-[11px] text-slate-400">${st==='atual'?'Você está aqui':st==='prox'?'Próximo nível':st==='done'?'Concluído':'Bloqueado'}</p></div></div>`;}).join('')}</div>
+    </div>
+    <div class="card p-5">
+      <h3 class="font-bold mb-3 flex items-center gap-2"><i data-feather="award" class="w-4 h-4 text-amber-500"></i>Conquistas <span class="badge bg-amber-100 text-amber-700">${C.conquistas.filter(c=>c.ok).length}/${C.conquistas.length}</span></h3>
+      <div class="grid grid-cols-4 gap-3">${C.conquistas.map(c=>`<div class="flex flex-col items-center gap-1 ${c.ok?'':'opacity-50'}"><div class="w-14 h-14 rounded-2xl ${corMap[c.cor][0]} flex items-center justify-center relative ${c.ok?'pop':''}"><i data-feather="${c.ic}" class="w-6 h-6 ${corMap[c.cor][1]}"></i>${c.ok?'<div class="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-white"><i data-feather="check" class="w-2.5 h-2.5 text-white"></i></div>':'<div class="absolute -bottom-1 -right-1 w-5 h-5 bg-slate-300 rounded-full flex items-center justify-center border-2 border-white"><i data-feather="lock" class="w-2.5 h-2.5 text-white"></i></div>'}</div><span class="text-[8.5px] text-center text-slate-500 leading-tight">${c.t}</span></div>`).join('')}</div>
+    </div>
+    <div class="card p-5">
+      <h3 class="font-bold mb-3 flex items-center gap-2"><i data-feather="book-open" class="w-4 h-4 text-purple-600"></i>Certificações</h3>
+      <div class="flex items-center gap-3 p-3 rounded-xl bg-purple-50 mb-2"><div class="w-9 h-9 rounded-lg bg-purple-100 flex items-center justify-center"><i data-feather="check" class="w-4 h-4 text-purple-600"></i></div><div class="flex-1"><p class="text-sm font-semibold text-slate-800">Vinhos I — Sommelier nível 1</p><p class="text-[11px] text-slate-400">Concluído em Mar/2026 · +120 XP</p></div></div>
+      <div class="flex items-center gap-3 p-3 rounded-xl border border-dashed border-slate-200"><div class="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center"><i data-feather="play" class="w-4 h-4 text-slate-400"></i></div><div class="flex-1"><p class="text-sm font-semibold text-slate-600">Vinhos II — em andamento</p><div class="h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden"><div class="h-full bg-amber-400 rounded-full" style="width:60%"></div></div></div></div>
+    </div>
+  </div>`;
+}
+
+/* ===================== TAB: RH (mensagens + avisos) ===================== */
+function viewRH(){
+  return `<div class="px-4 pt-4 fade space-y-4">
+    <div class="card p-5">
+      <h3 class="font-bold mb-3 flex items-center gap-2"><i data-feather="bell" class="w-4 h-4 text-blue-600"></i>Avisos</h3>
+      <div class="space-y-2">${C.avisos.map(a=>`<div class="flex gap-3 p-3 rounded-xl ${a.novo?'bg-blue-50/60':'bg-slate-50'}"><div class="w-9 h-9 rounded-lg ${corMap[a.cor][0]} flex items-center justify-center shrink-0"><i data-feather="${a.cor==='emerald'?'dollar-sign':a.cor==='purple'?'book-open':'calendar'}" class="w-4 h-4 ${corMap[a.cor][1]}"></i></div><div class="flex-1"><div class="flex items-center gap-2"><p class="text-sm font-semibold text-slate-800">${a.t}</p>${a.novo?'<span class="w-2 h-2 bg-blue-500 rounded-full"></span>':''}</div><p class="text-[11px] text-slate-400">${a.sub}</p></div><span class="badge ${corMap[a.cor][0]} ${corMap[a.cor][1]} self-start">${a.tag}</span></div>`).join('')}</div>
+    </div>
+    <div class="card p-5">
+      <h3 class="font-bold mb-1 flex items-center gap-2"><i data-feather="message-circle" class="w-4 h-4 text-blue-600"></i>Fale com o RH</h3>
+      <p class="text-[11px] text-slate-400 mb-3">Dúvidas, documentos, solicitações</p>
+      <div class="space-y-2 mb-3" id="chatBox">${C.mensagens.map(m=>msgHTML(m)).join('')}</div>
+      <div class="flex flex-wrap gap-2 mb-3">${['2ª via do crachá','Comprovante de renda','Atestado','Troca de turno'].map(q=>`<button onclick="enviarMsg('${q}')" class="badge bg-slate-100 text-slate-600 hover:bg-slate-200">${q}</button>`).join('')}</div>
+      <div class="flex gap-2"><input id="msgInput" placeholder="Escreva uma mensagem…" class="flex-1 px-3 py-2.5 border border-slate-200 rounded-xl text-sm" onkeydown="if(event.key==='Enter')enviarMsg()"><button onclick="enviarMsg()" class="w-11 h-11 bg-blue-600 text-white rounded-xl flex items-center justify-center hover:bg-blue-700"><i data-feather="send" class="w-4 h-4"></i></button></div>
+    </div>
+  </div>`;
+}
+function msgHTML(m){ return m.de==='rh'
+  ? `<div class="flex gap-2"><div class="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center shrink-0"><i data-feather="headphones" class="w-3.5 h-3.5 text-blue-600"></i></div><div class="max-w-[78%]"><div class="bg-slate-100 rounded-2xl rounded-tl-sm px-3 py-2 text-sm text-slate-700">${m.txt}</div><span class="text-[9px] text-slate-400 ml-1">RH · ${m.h}</span></div></div>`
+  : `<div class="flex justify-end"><div class="max-w-[78%] text-right"><div class="bg-blue-600 text-white rounded-2xl rounded-tr-sm px-3 py-2 text-sm">${m.txt}</div><span class="text-[9px] text-slate-400 mr-1">${m.h}</span></div></div>`; }
+window.enviarMsg=function(txt){ const inp=document.getElementById('msgInput'); const t=txt||(inp&&inp.value.trim()); if(!t)return; const h=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); C.mensagens.push({de:'eu',txt:t,h}); if(inp)inp.value=''; render();
+  setTimeout(()=>{ C.mensagens.push({de:'rh',txt:'Recebido! 👍 O RH vai te responder em breve por aqui.',h:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}); render(); const cb=document.getElementById('chatBox'); if(cb)cb.scrollIntoView({block:'end'}); },700); };
+
+/* ===================== NAV + RENDER ===================== */
+const TABS=[['inicio','Início','home'],['vendas','Vendas','trending-up'],['escala','Escala','calendar'],['conquistas','Conquistas','award'],['rh','RH','message-circle']];
+function nav(){
+  return `<div class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white/90 backdrop-blur border-t border-slate-200 px-2 py-1.5 flex justify-around z-20">
+    ${TABS.map(([id,lbl,ic])=>`<button onclick="go('${id}')" class="navbtn ${tab===id?'active':'text-slate-400'} flex flex-col items-center gap-0.5 px-2 py-1"><span class="nb w-9 h-7 rounded-full flex items-center justify-center transition"><i data-feather="${ic}" class="w-[18px] h-[18px]"></i></span><span class="text-[9px] font-medium">${lbl}</span></button>`).join('')}
+  </div>`;
+}
+window.go=function(t){ tab=t; render(); window.scrollTo({top:0,behavior:'smooth'}); };
+function render(){
+  const views={inicio:viewInicio,vendas:viewVendas,escala:viewEscala,conquistas:viewConquistas,rh:viewRH};
+  document.getElementById('app').innerHTML=header()+(views[tab]||viewInicio)()+nav();
+  feather.replace();
+  if(tab==='vendas') setTimeout(initVendasChart,30);
+}
+render();
+</script>
+</body>
+</html>
